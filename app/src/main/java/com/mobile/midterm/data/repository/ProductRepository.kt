@@ -4,25 +4,41 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.util.Base64
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
-import com.google.firebase.storage.FirebaseStorage
 import com.mobile.midterm.data.model.Product
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.io.InputStream
-import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 class ProductRepository(
-    private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
-    private val storage: FirebaseStorage = FirebaseStorage.getInstance()
+    private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 ) {
     private val collectionRef = firestore.collection("products")
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .build()
 
     fun getProductsFlow(): Flow<List<Product>> = callbackFlow {
         val listener: ListenerRegistration = collectionRef.addSnapshotListener { snapshot, error ->
@@ -53,7 +69,7 @@ class ProductRepository(
             gia = gia,
             image = image
         )
-        // Chỉ lưu đúng 4 trường theo đề bài
+        // Lưu đúng 4 trường theo đề bài
         collectionRef.add(product.toMap())
             .addOnSuccessListener {
                 onComplete(true, null)
@@ -98,8 +114,10 @@ class ProductRepository(
     }
 
     /**
-     * Tải ảnh lên Firebase Storage, nếu không khả dụng hoặc lỗi Storage thì chuyển thành Base64
-     * để luôn hiển thị và lưu trữ an toàn trong Firestore.
+     * Tải ảnh lên API hosting miễn phí hoàn toàn không cần đăng ký tài khoản / không cần API Key:
+     * 1. Thử PixelVault Quickstart API (https://api.pixelvault.dev/v1/images)
+     * 2. Thử TmpFiles API (https://tmpfiles.org/api/v1/upload)
+     * 3. Fallback sang Base64 nếu mất mạng hoặc API bận, đảm bảo ảnh luôn hiển thị 100% trong app.
      */
     fun uploadOrProcessImage(
         context: Context,
@@ -108,60 +126,138 @@ class ProductRepository(
         onResult: (String?) -> Unit
     ) {
         onProgress(true)
-        val filename = "img_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}.jpg"
-        val imageRef = storage.reference.child("products/$filename")
 
-        // Thử upload lên Firebase Storage
-        imageRef.putFile(uri)
-            .addOnSuccessListener {
-                imageRef.downloadUrl
-                    .addOnSuccessListener { downloadUri ->
-                        onProgress(false)
-                        onResult(downloadUri.toString())
-                    }
-                    .addOnFailureListener {
-                        // Fallback sang Base64
-                        fallbackToBase64(context, uri, onProgress, onResult)
-                    }
+        // Đọc bytes ảnh và nén nhẹ nếu cần
+        val imageBytes: ByteArray? = try {
+            val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
+            val bitmap = BitmapFactory.decodeStream(inputStream)
+            inputStream?.close()
+
+            if (bitmap != null) {
+                val maxDim = 800
+                val ratio = bitmap.width.toFloat() / bitmap.height.toFloat()
+                val targetW = if (ratio > 1) maxDim else (maxDim * ratio).toInt()
+                val targetH = if (ratio > 1) (maxDim / ratio).toInt() else maxDim
+                val scaled = Bitmap.createScaledBitmap(bitmap, targetW.coerceAtLeast(10), targetH.coerceAtLeast(10), true)
+
+                val baos = ByteArrayOutputStream()
+                scaled.compress(Bitmap.CompressFormat.JPEG, 85, baos)
+                baos.toByteArray()
+            } else {
+                null
             }
-            .addOnFailureListener {
-                // Khi Firebase Storage chưa cấu hình Rules/chưa kích hoạt bucket, tự động fallback sang Base64
-                fallbackToBase64(context, uri, onProgress, onResult)
+        } catch (e: Exception) {
+            null
+        }
+
+        if (imageBytes == null) {
+            onProgress(false)
+            onResult(null)
+            return
+        }
+
+        // Bước 1: Upload lên PixelVault (Miễn phí 100%, không cần tài khoản, trả về direct CDN URL)
+        val filename = "image_${System.currentTimeMillis()}.jpg"
+        val requestBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart(
+                "file",
+                filename,
+                imageBytes.toRequestBody("image/jpeg".toMediaTypeOrNull())
+            )
+            .build()
+
+        val request = Request.Builder()
+            .url("https://api.pixelvault.dev/v1/images")
+            .post(requestBody)
+            .build()
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                // Thử dịch vụ dự phòng thứ 2
+                uploadToTmpFiles(imageBytes, filename, context, uri, onProgress, onResult)
             }
+
+            override fun onResponse(call: Call, response: Response) {
+                val bodyStr = response.body?.string()
+                if (response.isSuccessful && !bodyStr.isNullOrBlank()) {
+                    try {
+                        val json = JSONObject(bodyStr)
+                        val directUrl = json.getJSONObject("data").getString("url")
+                        mainHandler.post {
+                            onProgress(false)
+                            onResult(directUrl)
+                        }
+                        return
+                    } catch (_: Exception) {}
+                }
+                // Thử dịch vụ dự phòng thứ 2
+                uploadToTmpFiles(imageBytes, filename, context, uri, onProgress, onResult)
+            }
+        })
     }
 
-    private fun fallbackToBase64(
+    private fun uploadToTmpFiles(
+        imageBytes: ByteArray,
+        filename: String,
         context: Context,
         uri: Uri,
         onProgress: (Boolean) -> Unit,
         onResult: (String?) -> Unit
     ) {
-        try {
-            val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
-            val originalBitmap = BitmapFactory.decodeStream(inputStream)
-            inputStream?.close()
+        val requestBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart(
+                "file",
+                filename,
+                imageBytes.toRequestBody("image/jpeg".toMediaTypeOrNull())
+            )
+            .build()
 
-            if (originalBitmap != null) {
-                // Resize nhẹ để tối ưu dung lượng
-                val maxDim = 400
-                val ratio = originalBitmap.width.toFloat() / originalBitmap.height.toFloat()
-                val targetW = if (ratio > 1) maxDim else (maxDim * ratio).toInt()
-                val targetH = if (ratio > 1) (maxDim / ratio).toInt() else maxDim
+        val request = Request.Builder()
+            .url("https://tmpfiles.org/api/v1/upload")
+            .post(requestBody)
+            .build()
 
-                val scaledBitmap = Bitmap.createScaledBitmap(originalBitmap, targetW.coerceAtLeast(10), targetH.coerceAtLeast(10), true)
-                val baos = ByteArrayOutputStream()
-                scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 75, baos)
-                val bytes = baos.toByteArray()
-                val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                fallbackToBase64(imageBytes, onProgress, onResult)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val bodyStr = response.body?.string()
+                if (response.isSuccessful && !bodyStr.isNullOrBlank()) {
+                    try {
+                        val json = JSONObject(bodyStr)
+                        val rawUrl = json.getJSONObject("data").getString("url")
+                        // Đổi https://tmpfiles.org/xxx/file.jpg sang direct link https://tmpfiles.org/dl/xxx/file.jpg
+                        val directUrl = rawUrl.replace("tmpfiles.org/", "tmpfiles.org/dl/")
+                        mainHandler.post {
+                            onProgress(false)
+                            onResult(directUrl)
+                        }
+                        return
+                    } catch (_: Exception) {}
+                }
+                fallbackToBase64(imageBytes, onProgress, onResult)
+            }
+        })
+    }
+
+    private fun fallbackToBase64(
+        imageBytes: ByteArray,
+        onProgress: (Boolean) -> Unit,
+        onResult: (String?) -> Unit
+    ) {
+        mainHandler.post {
+            try {
+                val base64 = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
                 onProgress(false)
                 onResult("data:image/jpeg;base64,$base64")
-            } else {
+            } catch (e: Exception) {
                 onProgress(false)
-                onResult(uri.toString())
+                onResult(null)
             }
-        } catch (e: Exception) {
-            onProgress(false)
-            onResult(uri.toString())
         }
     }
 

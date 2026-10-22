@@ -57,6 +57,10 @@ dependencies {
     // Coil Image Loading
     implementation(libs.coil.compose)
 
+    // HTTP client for free image upload API
+    implementation(libs.okhttp)
+
+
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

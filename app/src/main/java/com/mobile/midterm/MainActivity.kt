@@ -17,13 +17,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.mobile.midterm.data.model.Role
 import com.mobile.midterm.data.model.UserProfile
 import com.mobile.midterm.data.repository.AuthRepository
 import com.mobile.midterm.data.repository.ProductRepository
 import com.mobile.midterm.ui.screens.AdminProductScreen
 import com.mobile.midterm.ui.screens.AuthScreen
-import com.mobile.midterm.ui.screens.UserProductScreen
 import com.mobile.midterm.ui.theme.MidtermMobileTheme
 import com.mobile.midterm.ui.theme.PrimaryBlue
 
@@ -88,28 +86,15 @@ fun MainApp(
                     onLoginSuccess = { refreshUser() }
                 )
             } else {
-                when (profile.role) {
-                    Role.ADMIN -> {
-                        AdminProductScreen(
-                            userProfile = profile,
-                            productRepo = productRepo,
-                            onSignOut = {
-                                authRepo.signOut()
-                                refreshUser()
-                            }
-                        )
+                // Toàn bộ ứng dụng là phân hệ Admin
+                AdminProductScreen(
+                    userProfile = profile,
+                    productRepo = productRepo,
+                    onSignOut = {
+                        authRepo.signOut()
+                        refreshUser()
                     }
-                    Role.USER -> {
-                        UserProductScreen(
-                            userProfile = profile,
-                            productRepo = productRepo,
-                            onSignOut = {
-                                authRepo.signOut()
-                                refreshUser()
-                            }
-                        )
-                    }
-                }
+                )
             }
         }
     }

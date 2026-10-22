@@ -2,18 +2,14 @@ package com.mobile.midterm.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -21,7 +17,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -36,8 +31,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -58,7 +51,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mobile.midterm.data.model.Role
 import com.mobile.midterm.data.repository.AuthRepository
 import com.mobile.midterm.ui.theme.LightBlueBorder
 import com.mobile.midterm.ui.theme.PrimaryBlue
@@ -74,12 +66,11 @@ fun AuthScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
-    var selectedRole by remember { mutableStateOf(Role.ADMIN) }
 
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    fun performQuickLogin(testEmail: String, testPass: String, role: Role) {
+    fun performQuickLogin(testEmail: String, testPass: String) {
         isLoading = true
         errorMessage = null
         authRepo.signIn(testEmail, testPass) { success, err ->
@@ -87,11 +78,10 @@ fun AuthScreen(
                 isLoading = false
                 onLoginSuccess()
             } else {
-                // Nếu chưa có tài khoản test, tự động đăng ký
-                authRepo.signUp(testEmail, testPass, role) { signUpSuccess, signUpErr ->
+                authRepo.signUp(testEmail, testPass) { signUpSuccess, signUpErr ->
                     isLoading = false
                     if (signUpSuccess) {
-                        Toast.makeText(context, "Đã tạo và đăng nhập tài khoản mẫu!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Đã tạo và đăng nhập tài khoản Admin!", Toast.LENGTH_SHORT).show()
                         onLoginSuccess()
                     } else {
                         errorMessage = signUpErr ?: err
@@ -132,14 +122,14 @@ fun AuthScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "ECOMER",
-                    fontSize = 26.sp,
+                    text = "ECOMER - ADMIN",
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     color = PrimaryBlue
                 )
 
                 Text(
-                    text = "Hệ thống Quản lý Sản phẩm & Phân quyền",
+                    text = "Hệ thống Quản lý Dữ liệu Sản phẩm",
                     fontSize = 13.sp,
                     color = Color.Gray,
                     textAlign = TextAlign.Center
@@ -169,8 +159,8 @@ fun AuthScreen(
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it; errorMessage = null },
-                    label = { Text("Email") },
-                    placeholder = { Text("nhap_email@domain.com") },
+                    label = { Text("Email Admin") },
+                    placeholder = { Text("admin@ecomer.com") },
                     leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = PrimaryBlue) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
@@ -210,50 +200,6 @@ fun AuthScreen(
                     )
                 )
 
-                // Nếu là tab Đăng ký: Cho chọn phân quyền
-                if (selectedTab == 1) {
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text(
-                        text = "Chọn vai trò người dùng (Phân quyền):",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.DarkGray,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clickable { selectedRole = Role.ADMIN }
-                                .padding(end = 16.dp, top = 4.dp, bottom = 4.dp)
-                        ) {
-                            RadioButton(
-                                selected = selectedRole == Role.ADMIN,
-                                onClick = { selectedRole = Role.ADMIN },
-                                colors = RadioButtonDefaults.colors(selectedColor = PrimaryBlue)
-                            )
-                            Text("Admin", fontWeight = FontWeight.Bold, color = PrimaryBlue)
-                        }
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clickable { selectedRole = Role.USER }
-                                .padding(top = 4.dp, bottom = 4.dp)
-                        ) {
-                            RadioButton(
-                                selected = selectedRole == Role.USER,
-                                onClick = { selectedRole = Role.USER },
-                                colors = RadioButtonDefaults.colors(selectedColor = PrimaryBlue)
-                            )
-                            Text("User (Khách)", fontWeight = FontWeight.Medium)
-                        }
-                    }
-                }
-
                 if (errorMessage != null) {
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
@@ -292,7 +238,7 @@ fun AuthScreen(
                                     }
                                 }
                             } else {
-                                authRepo.signUp(email, password, selectedRole) { success, err ->
+                                authRepo.signUp(email, password) { success, err ->
                                     isLoading = false
                                     if (success) {
                                         Toast.makeText(context, "Đăng ký thành công!", Toast.LENGTH_SHORT).show()
@@ -310,45 +256,24 @@ fun AuthScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
                     ) {
                         Text(
-                            text = if (selectedTab == 0) "ĐĂNG NHẬP" else "ĐĂNG KÝ TÀI KHOẢN",
+                            text = if (selectedTab == 0) "ĐĂNG NHẬP ADMIN" else "ĐĂNG KÝ ADMIN",
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
-                // Mục tiện ích test nhanh
-                Text(
-                    text = "— Đăng nhập nhanh để chấm bài / demo —",
-                    fontSize = 12.sp,
-                    color = Color.Gray
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
+                // Nút đăng nhập nhanh
+                OutlinedButton(
+                    onClick = {
+                        performQuickLogin("admin@ecomer.com", "admin123")
+                    },
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    shape = RoundedCornerShape(8.dp)
                 ) {
-                    OutlinedButton(
-                        onClick = {
-                            performQuickLogin("admin@ecomer.com", "admin123", Role.ADMIN)
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text("Vào Admin", fontSize = 12.sp, color = PrimaryBlue)
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            performQuickLogin("user@ecomer.com", "user123", Role.USER)
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text("Vào User", fontSize = 12.sp, color = Color.DarkGray)
-                    }
+                    Text("Đăng nhập nhanh Admin (admin@ecomer.com)", fontSize = 13.sp, color = PrimaryBlue)
                 }
             }
         }

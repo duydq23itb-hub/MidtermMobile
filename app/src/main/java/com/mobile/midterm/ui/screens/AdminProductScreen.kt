@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -89,7 +90,7 @@ fun AdminProductScreen(
     var imageUriOrUrl by remember { mutableStateOf("") }
     var imageFileName by remember { mutableStateOf("") }
 
-    // State chỉnh sửa (null = Thêm mới, khác null = Đang sửa sản phẩm đó)
+    // State chỉnh sửa
     var editingProductId by remember { mutableStateOf<String?>(null) }
 
     // Loading & dialogs
@@ -103,7 +104,6 @@ fun AdminProductScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            // Lấy tên file thực tế của ảnh
             var displayName = "image_${System.currentTimeMillis()}.jpg"
             try {
                 val cursor = context.contentResolver.query(uri, null, null, null, null)
@@ -119,17 +119,17 @@ fun AdminProductScreen(
 
             imageFileName = displayName
 
-            // Tải ảnh lên Firebase Storage (có fallback Base64 nếu Storage chưa kích hoạt)
+            // Tải ảnh lên API miễn phí không cần đăng ký
             productRepo.uploadOrProcessImage(
                 context = context,
                 uri = uri,
                 onProgress = { isUploadingImage = it },
                 onResult = { resultString ->
-                    if (resultString != null) {
+                    if (!resultString.isNullOrBlank()) {
                         imageUriOrUrl = resultString
-                        Toast.makeText(context, "Đã chọn ảnh thành công!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Tải ảnh lên thành công!", Toast.LENGTH_SHORT).show()
                     } else {
-                        Toast.makeText(context, "Không thể đọc ảnh, vui lòng thử lại!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Không thể tải ảnh, vui lòng thử lại!", Toast.LENGTH_SHORT).show()
                     }
                 }
             )
@@ -150,7 +150,7 @@ fun AdminProductScreen(
             .fillMaxSize()
             .background(Color.White)
     ) {
-        // Top action bar cho Admin (Hiển thị quyền + Xuất JSON + Đăng xuất)
+        // Top action bar cho Admin
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -161,7 +161,7 @@ fun AdminProductScreen(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Admin: ${userProfile.email}",
+                    text = "Quản trị viên: ${userProfile.email}",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = PrimaryBlue,
@@ -169,7 +169,7 @@ fun AdminProductScreen(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "Quyền: Quản trị viên (Toàn quyền CRUD)",
+                    text = "Phân hệ: Admin (Quản lý sản phẩm)",
                     fontSize = 11.sp,
                     color = Color.DarkGray
                 )
@@ -286,28 +286,44 @@ fun AdminProductScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Mục 4: Chọn hình ảnh (Trường Image lưu hình ảnh theo đúng yêu cầu đề bài)
+                // Mục 4: Chọn hình ảnh (Có hiển thị preview ảnh ngay trong form)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp)
+                        .height(60.dp)
                         .border(1.dp, LightBlueBorder, RoundedCornerShape(6.dp))
                         .clickable {
                             imagePickerLauncher.launch("image/*")
                         }
-                        .padding(horizontal = 12.dp),
+                        .padding(horizontal = 8.dp),
                     contentAlignment = Alignment.CenterStart
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Folder,
-                            contentDescription = "Chọn tệp ảnh",
-                            tint = Color.DarkGray,
-                            modifier = Modifier.size(24.dp)
-                        )
+                        // Xem trước ảnh nếu đã chọn
+                        if (imageUriOrUrl.isNotBlank()) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(imageUriOrUrl)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = "Xem trước ảnh",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0xFFEEEEEE))
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Folder,
+                                contentDescription = "Chọn tệp ảnh",
+                                tint = Color.DarkGray,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
 
                         Spacer(modifier = Modifier.width(10.dp))
 
@@ -319,25 +335,43 @@ fun AdminProductScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Đang xử lý hình ảnh...",
+                                text = "Đang tải ảnh lên máy chủ...",
                                 fontSize = 13.sp,
                                 color = PrimaryBlue
                             )
                         } else {
-                            Text(
-                                text = if (imageFileName.isNotBlank()) {
-                                    imageFileName
-                                } else if (imageUriOrUrl.isNotBlank()) {
-                                    "Đã lưu ảnh (${imageUriOrUrl.take(25)}...)"
-                                } else {
-                                    "Chọn hình ảnh sản phẩm (Image)..."
-                                },
-                                fontSize = 14.sp,
-                                color = if (imageFileName.isNotBlank() || imageUriOrUrl.isNotBlank()) Color.Black else Color.Gray,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (imageFileName.isNotBlank()) {
+                                        imageFileName
+                                    } else if (imageUriOrUrl.isNotBlank()) {
+                                        "Đã có ảnh sản phẩm"
+                                    } else {
+                                        "Chọn hình ảnh sản phẩm..."
+                                    },
+                                    fontSize = 13.sp,
+                                    fontWeight = if (imageUriOrUrl.isNotBlank()) FontWeight.Medium else FontWeight.Normal,
+                                    color = if (imageUriOrUrl.isNotBlank()) Color.Black else Color.Gray,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (imageUriOrUrl.isNotBlank()) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = Color(0xFF2E7D32),
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Ảnh sẵn sàng",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF2E7D32)
+                                        )
+                                    }
+                                }
+                            }
 
                             if (imageUriOrUrl.isNotBlank()) {
                                 IconButton(
@@ -382,7 +416,7 @@ fun AdminProductScreen(
                                 isSaving = true
 
                                 if (editingProductId == null) {
-                                    // THÊM SẢN PHẨM MỚI (chỉ lưu 4 trường theo đúng đề bài)
+                                    // THÊM SẢN PHẨM MỚI (chỉ 4 trường theo đề bài)
                                     productRepo.addProduct(
                                         tenSanPham = tenSanPham.trim(),
                                         loaiSanPham = loaiSanPham.trim(),
