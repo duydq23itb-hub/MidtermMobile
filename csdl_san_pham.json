@@ -1,0 +1,20 @@
+[
+  {
+    "tenSanPham": "quan zin nam",
+    "loaiSanPham": "Quan nam",
+    "gia": 200000,
+    "image": "https://images.pexels.com/photos/1598507/pexels-photo-1598507.jpeg"
+  },
+  {
+    "tenSanPham": "Ap phong nam",
+    "loaiSanPham": "Thoi trang nu",
+    "gia": 300000,
+    "image": "https://images.pexels.com/photos/264516/pexels-photo-264516.jpeg"
+  },
+  {
+    "tenSanPham": "Ao so mi oxford",
+    "loaiSanPham": "Thoi trang nam",
+    "gia": 350000,
+    "image": "https://images.pexels.com/photos/297933/pexels-photo-297933.jpeg"
+  }
+]
